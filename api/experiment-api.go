@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"qiot-configuration-service/config"
+	"qiot-configuration-service/service"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -12,8 +13,9 @@ import (
 )
 
 func NewExperimentAPI(appConfig *config.AppConfiguration, ginEngine *gin.Engine) {
+	es := service.NewExperimentService(appConfig)
 	ginEngine.GET("/experiment", func(c *gin.Context) {
-		getExperiments(c, appConfig)
+		getExperiments(c, es)
 	})
 	ginEngine.GET("/experiment/yaml/:id", func(c *gin.Context) {
 		getExperimentByIdYaml(c, appConfig, c.Param("id"))
@@ -39,36 +41,21 @@ func NewExperimentAPI(appConfig *config.AppConfiguration, ginEngine *gin.Engine)
 	})
 }
 
-func getExperiments(c *gin.Context, appConfig *config.AppConfiguration) {
-	resultFromMongo, err := appConfig.Mongo.ExecuteSelectionQuery(bson.M{}, "experiments")
+func getExperiments(c *gin.Context, es *service.ExperimentService) {
+	result, err := es.GetAllExperiments()
 	if err != nil {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error fetching data from database"})
 		return
 	}
-	result := make([]bson.M, 0)
-	for _, element := range resultFromMongo {
-		id := element["_id"]
-		delete(element, "devices")
-		delete(element, "_id")
-		element["id"] = id
-		result = append(result, element)
-	}
 	c.IndentedJSON(http.StatusOK, result)
 }
-func getRawExperimentById(c *gin.Context, appConfig *config.AppConfiguration, experimentId string) {
-	oid, err2 := primitive.ObjectIDFromHex(experimentId)
-	if err2 != nil {
-		log.Println("ID non valido:", err2)
-		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error converting experiment ID"})
-		return
-	}
-	experimentList, err := appConfig.Mongo.ExecuteSelectionQuery(bson.M{"_id": oid}, "experiments")
-	if err != nil || len(experimentList) == 0 {
+func getRawExperimentById(c *gin.Context, es *service.ExperimentService, experimentId string) {
+	result, err := es.GetRawExperimentById(experimentId)
+	if err != nil {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error fetching experiment from database"})
 		return
 	}
-	experiment := experimentList[0]
-	c.IndentedJSON(http.StatusOK, experiment)
+	c.IndentedJSON(http.StatusOK, result)
 }
 func getExperimentByIdYaml(c *gin.Context, appConfig *config.AppConfiguration, experimentId string) {
 	result := bson.M{}
