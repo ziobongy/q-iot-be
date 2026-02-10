@@ -1,21 +1,21 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"qiot-configuration-service/config"
+	"qiot-configuration-service/service"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func NewSensorAPI(appConfig *config.AppConfiguration, ginEngine *gin.Engine) {
+	ss := service.NewSensorService(appConfig)
 	ginEngine.GET("/sensor", func(c *gin.Context) {
-		getSensors(c, appConfig)
+		getSensors(c, ss)
 	})
 	ginEngine.GET("/sensor/:sensorId", func(c *gin.Context) {
-		getSensorById(c, appConfig, c.Param("sensorId"))
+		getSensorById(c, ss, c.Param("sensorId"))
 	})
 	ginEngine.POST("/sensor", func(c *gin.Context) {
 		var body bson.M
@@ -23,7 +23,7 @@ func NewSensorAPI(appConfig *config.AppConfiguration, ginEngine *gin.Engine) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		insertSensorConfiguration(c, appConfig, body)
+		insertSensorConfiguration(c, ss, body)
 	})
 	ginEngine.PUT("/sensor/:sensorId", func(c *gin.Context) {
 		var body bson.M
@@ -31,12 +31,12 @@ func NewSensorAPI(appConfig *config.AppConfiguration, ginEngine *gin.Engine) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		editSensorConfiguration(c, appConfig, c.Param("sensorId"), body)
+		editSensorConfiguration(c, ss, c.Param("sensorId"), body)
 	})
 }
 
-func getSensors(c *gin.Context, appConfig *config.AppConfiguration) {
-	result, err := appConfig.Mongo.ExecuteSelectionQuery(bson.M{})
+func getSensors(c *gin.Context, ss *service.SensorService) {
+	result, err := ss.GetAllSensors()
 	if err != nil {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error fetching data from database"})
 		return
@@ -44,39 +44,26 @@ func getSensors(c *gin.Context, appConfig *config.AppConfiguration) {
 	c.IndentedJSON(http.StatusOK, result)
 }
 
-func getSensorById(c *gin.Context, appConfig *config.AppConfiguration, sensorId string) {
-	oid, err2 := primitive.ObjectIDFromHex(sensorId)
-	if err2 != nil {
-		log.Println("ID non valido:", err2)
-		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error converting sensor ID"})
-		return
-	}
-	sensorList, err := appConfig.Mongo.ExecuteSelectionQuery(bson.M{"_id": oid})
-	if err != nil || len(sensorList) == 0 {
+func getSensorById(c *gin.Context, ss *service.SensorService, sensorId string) {
+	sensor, err := ss.GetSensorById(sensorId)
+	if err != nil {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error fetching sensor from database"})
 		return
 	}
-	sensor := sensorList[0]
 	c.IndentedJSON(http.StatusOK, sensor)
 }
 
-func insertSensorConfiguration(c *gin.Context, appConfig *config.AppConfiguration, data bson.M) {
-	_, errConfiguration := appConfig.Mongo.InsertData(data)
+func insertSensorConfiguration(c *gin.Context, ss *service.SensorService, data bson.M) {
+	_, errConfiguration := ss.InsertSensor(data)
 	if errConfiguration != nil {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error inserting configuration into database"})
 		return
 	}
 	c.IndentedJSON(http.StatusOK, gin.H{"result": "Sensor inserted successfully"})
 }
-func editSensorConfiguration(c *gin.Context, appConfig *config.AppConfiguration, sensorId string, data bson.M) {
-	oid, err2 := primitive.ObjectIDFromHex(sensorId)
-	if err2 != nil {
-		log.Println("ID non valido:", err2)
-		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error converting sensor ID"})
-		return
-	}
-	modifiedCount, errUpdate := appConfig.Mongo.UpdateData(
-		bson.M{"_id": oid},
+func editSensorConfiguration(c *gin.Context, ss *service.SensorService, sensorId string, data bson.M) {
+	modifiedCount, errUpdate := ss.EditSensorConfiguration(
+		sensorId,
 		data,
 	)
 	if errUpdate != nil || modifiedCount == 0 {

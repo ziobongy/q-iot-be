@@ -15,7 +15,7 @@ func main() {
 
 	router := gin.Default()
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowOrigins:     []string{"http://localhost:5173", "http://vmi2209617.contaboserver.net:8899"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -25,6 +25,7 @@ func main() {
 	api.NewConfigurationAPI(appConfiguration, router)
 	api.NewSensorAPI(appConfiguration, router)
 	api.NewExperimentAPI(appConfiguration, router)
+	api.NewDashboardAPI(appConfiguration, router)
 
 	router.Run(":8080")
 }

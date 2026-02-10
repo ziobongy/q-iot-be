@@ -1,12 +1,15 @@
 package config
 
 type AppConfiguration struct {
-	Mongo *MongoClient
+	Mongo  *MongoClient
+	Influx *InfluxClient
 }
 
 func NewAppConfiguration() *AppConfiguration {
 	mongo := NewMongoClient()
+	influx := NewInfluxClient()
 	return &AppConfiguration{
-		Mongo: mongo,
+		Mongo:  mongo,
+		Influx: influx,
 	}
 }
