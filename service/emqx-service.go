@@ -79,7 +79,7 @@ func (c *Client) GetEMQXListActions() ([]map[string]interface{}, error) {
 		c.Logger.Printf("GetEMQXListActions request error: %v", err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	c.Logger.Printf("--- Current Configured actions ---\nStatus Code: %d\nResponse: %s\n", resp.StatusCode, string(body))
 
@@ -99,7 +99,7 @@ func (c *Client) CreateEMQXAction(actionName, description, influxWriteSyntax str
 	url := c.BaseURL + "/api/v5/actions"
 	payload := map[string]interface{}{
 		"connector":   "Influx1",
-		"description": description + "fromGolang",
+		"description": description,
 		"enable":      true,
 		"name":        actionName,
 		"parameters": map[string]interface{}{
@@ -149,7 +149,7 @@ func (c *Client) CreateEMQXAction(actionName, description, influxWriteSyntax str
 		c.Logger.Printf("CreateEMQXAction request error: %v", err)
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	c.Logger.Printf("Status Code: %d\nResponse: %s\n", resp.StatusCode, string(body))
 	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
@@ -174,10 +174,33 @@ func (c *Client) CreateEMQXRule(ruleID, ruleName, description, sql, actionName s
 		c.Logger.Printf("CreateEMQXRule request error: %v", err)
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	c.Logger.Printf("Status Code: %d\nResponse: %s\n", resp.StatusCode, string(body))
-	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
+
+	// If the resource already exists, attempt to update it with PUT
+	if resp.StatusCode != http.StatusCreated {
+		c.Logger.Printf("Rule %s already exists, attempting to update (PUT)", ruleID)
+		putURL := url + "/" + ruleID
+		// try PUT to update the existing rule
+		respPut, errPut := c.doRequest(http.MethodPut, putURL, bytes.NewReader(bs))
+		if errPut != nil {
+			c.Logger.Printf("CreateEMQXRule PUT request error: %v", errPut)
+			return false, errPut
+		}
+		defer func() { _ = respPut.Body.Close() }()
+		bodyPut, _ := io.ReadAll(respPut.Body)
+		c.Logger.Printf("PUT Status Code: %d\nPUT Response: %s\n", respPut.StatusCode, string(bodyPut))
+		if respPut.StatusCode >= 200 && respPut.StatusCode < 300 {
+			return true, nil
+		}
+		return false, fmt.Errorf("PUT failed: status %d: %s", respPut.StatusCode, string(bodyPut))
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return true, nil
+	}
+	return false, fmt.Errorf("POST failed: status %d: %s", resp.StatusCode, string(body))
 }
 
 // ProcessYAMLAndSync reads the YAML pointed by env YAML_FILE_PATH and creates actions+rules.

@@ -60,6 +60,7 @@ func (es *ExperimentService) GetCompleteExperimentById(id string) (bson.M, error
 		return nil, err
 	}
 	experiment := experimentList[0]
+	result["experimentId"] = experiment["_id"].(primitive.ObjectID).Hex()
 	result["devices"] = bson.M{}
 	if experiment["devices"] != nil {
 		i := 0
