@@ -30,14 +30,16 @@ func NewInfluxClient() *InfluxClient {
 	}
 }
 
-func (client InfluxClient) ExecuteQuery(bucket string, deviceAddress string, measurement string, field string) ([]string, []float64, error) {
+func (client InfluxClient) ExecuteQuery(experimentId string, bucket string, deviceAddress string, measurement string, field string) ([]string, []float64, error) {
 	flux := fmt.Sprintf(`
 		from(bucket: "%s")
 		  |> range(start: -%ds)
+		  |> filter(fn: (r) => r["experimentId"] == "%s")
 		  |> filter(fn: (r) => r["deviceAddress"] == "%s")
 		  |> filter(fn: (r) => r["_measurement"] == "%s")
 		  |> filter(fn: (r) => r["_field"] == "%s")
 		`,
+		experimentId,
 		bucket,
 		5,
 		deviceAddress,

@@ -134,7 +134,7 @@ func (es *ExperimentService) InsertExperiment(data bson.M) (InsertedID interface
 		return nil, errCompleteExperiment
 	}
 	emqx := NewClientFromEnv()
-	errorEmqx := emqx.ProcessYAMLAndSync(completeExperiment["devices"].(bson.M))
+	errorEmqx := emqx.ProcessYAMLAndSync(completeExperiment)
 	if errorEmqx != nil {
 		return nil, errorEmqx
 	}

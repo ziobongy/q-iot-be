@@ -62,7 +62,7 @@ func (ds *DashboardService) GetDashboardData(experimentId string, characteristic
 	}
 	result := []bson.M{}
 	for _, element := range elementToQuery {
-		categories, data, err := ds.AppConfig.Influx.ExecuteQuery(element.Bucket, element.DeviceAddress, element.Measurement, element.Field)
+		categories, data, err := ds.AppConfig.Influx.ExecuteQuery(experimentId, element.Bucket, element.DeviceAddress, element.Measurement, element.Field)
 		if err != nil {
 			return nil, err
 		}

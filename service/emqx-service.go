@@ -41,9 +41,7 @@ func NewClientFromEnv() *Client {
 
 	base := fmt.Sprintf("http://%s:%s", host, port)
 
-	// setup logger to file emqx_config.log (append)
-	f, _ := os.OpenFile("emqx_config.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	logger := log.New(f, "", log.LstdFlags)
+	logger := log.New(os.Stdout, "", log.LstdFlags)
 
 	return &Client{
 		BaseURL:  base,
@@ -205,10 +203,16 @@ func (c *Client) CreateEMQXRule(ruleID, ruleName, description, sql, actionName s
 
 // ProcessYAMLAndSync reads the YAML pointed by env YAML_FILE_PATH and creates actions+rules.
 // It mirrors the Python control flow but uses dynamic maps to avoid a large struct model.
-func (c *Client) ProcessYAMLAndSync(devices bson.M) error {
+func (c *Client) ProcessYAMLAndSync(experiment bson.M) error {
 	actionsList, _ := c.GetEMQXListActions()
 
 	nonAlpha := regexp.MustCompile(`[^a-z0-9]`)
+
+	// extract experimentId from the passed experiment (GetCompleteExperimentById sets this)
+	experimentId := getString(experiment, "experimentId")
+
+	// devices were previously passed directly; now pull them from the experiment
+	devices, _ := experiment["devices"].(bson.M)
 
 	for deviceName, dv := range devices {
 		deviceMap, ok := dv.(bson.M)
@@ -248,16 +252,21 @@ func (c *Client) ProcessYAMLAndSync(devices bson.M) error {
 						n := getString(f, "name")
 						influxParts = append(influxParts, fmt.Sprintf("%s=${payload.%s}i", n, n))
 					}
+					// include experimentId as a fixed tag if available
+					tagPrefix := measureName
+					if experimentId != "" {
+						tagPrefix = fmt.Sprintf("%s,experimentId=%s", measureName, experimentId)
+					}
 					writeSyntax := fmt.Sprintf("%s,appTagName=${payload.APP_TAG_NAME},deviceAddress=${payload.deviceAddress},deviceName=${payload.deviceName},gatewayName=${payload.gatewayName} %s",
-						measureName, strings.Join(influxParts, ","))
+						tagPrefix, strings.Join(influxParts, ","))
 					sql := fmt.Sprintf(`SELECT * FROM "%s"`, mqttTopic)
 
-					actionName := "action_" + measureName
+					actionName := "action_" + measureName + "_" + experimentId
 					actionDesc := fmt.Sprintf("InfluxDB action for %s - %s", deviceName, getString(chm, "name"))
 					_, _ = c.CreateEMQXAction(actionName, actionDesc, writeSyntax, actionsList)
 
-					ruleName := "rule_" + measureName
-					ruleID := "rule_id_" + measureName
+					ruleName := "rule_" + measureName + "_" + experimentId
+					ruleID := "rule_id_" + measureName + "_" + experimentId
 					ruleDesc := fmt.Sprintf("Rule for %s - %s", deviceName, getString(chm, "name"))
 					_, _ = c.CreateEMQXRule(ruleID, ruleName, ruleDesc, sql, actionName)
 				}
