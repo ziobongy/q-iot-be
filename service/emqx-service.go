@@ -274,10 +274,10 @@ func (c *Client) ProcessYAMLAndSync(experiment bson.M) error {
 		}
 
 		// movesense_whiteboard measures
-		if mw, ok := deviceMap["movesense_whiteboard"].(map[string]interface{}); ok {
-			if measures, ok := mw["measures"].([]interface{}); ok {
+		if mw, ok := deviceMap["movesense_whiteboard"].(bson.M); ok {
+			if measures, ok := mw["measures"].([]bson.M); ok {
 				for _, m := range measures {
-					mm, _ := m.(map[string]interface{})
+					mm := m
 					mname := strings.ToLower(getString(mm, "name"))
 					clean := nonAlpha.ReplaceAllString(mname, "")
 					mqttTopic := getString(mm, "mqttTopic")
@@ -285,24 +285,24 @@ func (c *Client) ProcessYAMLAndSync(experiment bson.M) error {
 						continue
 					}
 					measureName := deviceShort + "_" + clean
-					actionName := "action_" + measureName
-					ruleName := "rule_" + measureName
-					ruleID := "rule_id_" + measureName
+					actionName := "action_" + measureName + "_" + experimentId
+					ruleName := "rule_" + measureName + "_" + experimentId
+					ruleID := "rule_id_" + measureName + "_" + experimentId
 					ruleDesc := fmt.Sprintf("Rule for %s - %s", deviceName, getString(mm, "name"))
 					actionDesc := fmt.Sprintf("InfluxDB action for %s - %s", deviceName, getString(mm, "name"))
 
 					// jsonPayloadParser
-					if jp, ok := mm["jsonPayloadParser"].(map[string]interface{}); ok {
-						fields := []map[string]interface{}{}
-						if farr, ok := jp["fields"].([]interface{}); ok {
+					if jp, ok := mm["jsonPayloadParser"].(bson.M); ok {
+						fields := []bson.M{}
+						if farr, ok := jp["fields"].(bson.A); ok {
 							for _, fi := range farr {
-								if fm, ok := fi.(map[string]interface{}); ok {
+								if fm, ok := fi.(bson.M); ok {
 									fields = append(fields, fm)
 								}
 							}
 						}
 						// add fixed field
-						fields = append(fields, map[string]interface{}{"name": "gatewayBattery", "type": "integer"})
+						fields = append(fields, bson.M{"name": "gatewayBattery", "type": "integer"})
 						useJq := false
 						if uj, ok := jp["use_jq"].(bool); ok {
 							useJq = uj
@@ -330,16 +330,20 @@ func (c *Client) ProcessYAMLAndSync(experiment bson.M) error {
 							}
 						}
 						sql := fmt.Sprintf("SELECT %s FROM \"%s\"", strings.Join(selectParts, ", "), mqttTopic)
-						writeSyntax := fmt.Sprintf("%s,deviceName=${deviceName},gatewayName=${gatewayName} %s", measureName, strings.Join(influxParts, ","))
+						tagPrefix := measureName
+						if experimentId != "" {
+							tagPrefix = fmt.Sprintf("%s,experimentId=%s", measureName, experimentId)
+						}
+						writeSyntax := fmt.Sprintf("%s,deviceAddress=${payload.deviceAddress},deviceName=${deviceName},gatewayName=${gatewayName} %s", tagPrefix, strings.Join(influxParts, ","))
 						_, _ = c.CreateEMQXAction(actionName, actionDesc, writeSyntax, actionsList)
 						_, _ = c.CreateEMQXRule(ruleID, ruleName, ruleDesc, sql, actionName)
-					} else if ja, ok := mm["jsonArrayParser"].(map[string]interface{}); ok {
+					} else if ja, ok := mm["jsonArrayParser"].(bson.M); ok {
 						// jsonArrayParser
 						arrayPath := getString(ja, "arrayPath")
-						fields := []map[string]interface{}{}
-						if farr, ok := ja["fields"].([]interface{}); ok {
+						fields := []bson.M{}
+						if farr, ok := ja["fields"].(bson.A); ok {
 							for _, fi := range farr {
-								if fm, ok := fi.(map[string]interface{}); ok {
+								if fm, ok := fi.(bson.M); ok {
 									fields = append(fields, fm)
 								}
 							}
@@ -363,15 +367,19 @@ func (c *Client) ProcessYAMLAndSync(experiment bson.M) error {
 							}
 						}
 						sql := fmt.Sprintf("FOREACH payload.%s as %s DO %s FROM \"%s\"", arrayPath, arrayAlias, strings.Join(doParts, ", "), mqttTopic)
-						writeSyntax := fmt.Sprintf("%s,deviceName=${deviceName},gatewayName=${gatewayName} %s", measureName, strings.Join(influxParts, ","))
+						tagPrefix := measureName
+						if experimentId != "" {
+							tagPrefix = fmt.Sprintf("%s,experimentId=%s", measureName, experimentId)
+						}
+						writeSyntax := fmt.Sprintf("%s,deviceAddress=${payload.deviceAddress},deviceName=${deviceName},gatewayName=${gatewayName} %s", tagPrefix, strings.Join(influxParts, ","))
 						_, _ = c.CreateEMQXAction(actionName, actionDesc, writeSyntax, actionsList)
 						_, _ = c.CreateEMQXRule(ruleID, ruleName, ruleDesc, sql, actionName)
-					} else if smp, ok := mm["SingleMeasurementParser"].([]interface{}); ok {
+					} else if smp, ok := mm["SingleMeasurementParser"].(bson.A); ok {
 						// SingleMeasurementParser - fields are list of maps
 						selectParts := []string{"payload.deviceName as deviceName", "payload.gatewayName as gatewayName"}
 						influxParts := []string{}
 						for _, fi := range smp {
-							if fm, ok := fi.(map[string]interface{}); ok {
+							if fm, ok := fi.(bson.M); ok {
 								fname := getString(fm, "name")
 								fpath := getString(fm, "path")
 								ftype := getString(fm, "type")
@@ -388,7 +396,11 @@ func (c *Client) ProcessYAMLAndSync(experiment bson.M) error {
 							}
 						}
 						sql := fmt.Sprintf("SELECT %s FROM \"%s\"", strings.Join(selectParts, ", "), mqttTopic)
-						writeSyntax := fmt.Sprintf("%s,deviceName=${deviceName},gatewayName=${gatewayName} %s", measureName, strings.Join(influxParts, ","))
+						tagPrefix := measureName
+						if experimentId != "" {
+							tagPrefix = fmt.Sprintf("%s,experimentId=%s", measureName, experimentId)
+						}
+						writeSyntax := fmt.Sprintf("%s,deviceAddress=${payload.deviceAddress},deviceName=${deviceName},gatewayName=${gatewayName} %s", tagPrefix, strings.Join(influxParts, ","))
 						_, _ = c.CreateEMQXAction(actionName, actionDesc, writeSyntax, actionsList)
 						_, _ = c.CreateEMQXRule(ruleID, ruleName, ruleDesc, sql, actionName)
 					}

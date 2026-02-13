@@ -92,7 +92,7 @@ func (es *ExperimentService) GetCompleteExperimentById(id string) (bson.M, error
 									"structParser": characteristicMap["structParser"],
 									"mqttTopic": "qiot/" +
 										experiment["_id"].(primitive.ObjectID).Hex() + "/" +
-										sensor["name"].(string) + "/" +
+										strings.ToLower(strings.Replace(sensor["name"].(string), " ", "", -1)) + "/" +
 										strings.ToLower(strings.Replace(device.(primitive.M)["macAddress"].(string), ":", "", -1)) + "/" +
 										strings.ToLower(strings.Replace(characteristicMap["name"].(string), " ", "", -1)),
 								})
@@ -107,7 +107,7 @@ func (es *ExperimentService) GetCompleteExperimentById(id string) (bson.M, error
 			}
 			sensor["services"] = sensorServices
 			sensor["address"] = device.(bson.M)["macAddress"]
-			if _, ok := device.(bson.M)["dynamicSchema"]; ok {
+			if _, ok := sensor["dynamicSchema"]; ok {
 				sensor["dynamicSchema"] = device.(bson.M)["dynamicSchema"]
 				delete(sensor, "dynamicSchema")
 				resultJson := sensor["dynamicJson"].(primitive.M)
@@ -116,6 +116,22 @@ func (es *ExperimentService) GetCompleteExperimentById(id string) (bson.M, error
 					sensor[key] = resultJson[key]
 				}
 				delete(sensor, "dynamicJson")
+			}
+			if mw, ok := sensor["movesense_whiteboard"].(bson.M); ok {
+				if measures, ok := mw["measures"].(bson.A); ok {
+					newMeasures := []bson.M{}
+					for _, m := range measures {
+						mMap := m.(bson.M)
+						mMap["mqttTopic"] = "qiot/" +
+							experiment["_id"].(primitive.ObjectID).Hex() + "/" +
+							strings.ToLower(strings.Replace(device.(primitive.M)["macAddress"].(string), ":", "", -1)) +
+							"/ble/movesense/" +
+							strings.ToLower(strings.Replace(mMap["name"].(string), ":", "", -1))
+						newMeasures = append(newMeasures, mMap)
+					}
+					mw["measures"] = newMeasures
+					sensor["movesense_whiteboard"] = mw
+				}
 			}
 			result["devices"].(bson.M)["sensor_"+strconv.Itoa(i)] = sensor
 			i++
@@ -150,6 +166,16 @@ func (es *ExperimentService) UpdateExperiment(id string, data bson.M) (int64, er
 	if errConfiguration != nil {
 		log.Println("error while inserting:", errConfiguration)
 		return 0, errConfiguration
+	}
+	completeExperiment, errCompleteExperiment := es.GetCompleteExperimentById(id)
+	if errCompleteExperiment != nil {
+		log.Println("error while retrieving complete experiment:", errCompleteExperiment)
+		return 0, errCompleteExperiment
+	}
+	emqx := NewClientFromEnv()
+	errorEmqx := emqx.ProcessYAMLAndSync(completeExperiment)
+	if errorEmqx != nil {
+		return 0, errorEmqx
 	}
 	return inserted, nil
 }

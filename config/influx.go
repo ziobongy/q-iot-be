@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -31,21 +32,24 @@ func NewInfluxClient() *InfluxClient {
 }
 
 func (client InfluxClient) ExecuteQuery(experimentId string, bucket string, deviceAddress string, measurement string, field string) ([]string, []float64, error) {
+	// build base flux query; append _field filter only when field is non-empty
 	flux := fmt.Sprintf(`
 		from(bucket: "%s")
 		  |> range(start: -%ds)
 		  |> filter(fn: (r) => r["experimentId"] == "%s")
 		  |> filter(fn: (r) => r["deviceAddress"] == "%s")
 		  |> filter(fn: (r) => r["_measurement"] == "%s")
-		  |> filter(fn: (r) => r["_field"] == "%s")
 		`,
-		experimentId,
 		bucket,
 		5,
+		experimentId,
 		deviceAddress,
 		measurement,
-		field,
-	) // timeout context
+	)
+	if strings.TrimSpace(field) != "" {
+		// append field filter
+		flux += fmt.Sprintf("\n\t\t  |> filter(fn: (r) => r[\"_field\"] == \"%s\")\n\t\t", field)
+	}
 	log.Printf("Query: %s", flux)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()

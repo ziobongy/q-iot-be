@@ -39,13 +39,13 @@ func (ss *SensorService) GetSensorById(id string) (bson.M, error) {
 	}
 	sensor := sensorList[0]
 	if _, ok := sensor["dynamicSchema"]; ok {
-		delete(sensor, "dynamicSchema")
+		//delete(sensor, "dynamicSchema")
 		resultJson := sensor["dynamicJson"].(primitive.M)
 		keys := maps.Keys(resultJson)
 		for key := range keys {
 			sensor[key] = resultJson[key]
 		}
-		delete(sensor, "dynamicJson")
+		//delete(sensor, "dynamicJson")
 	}
 	return sensor, nil
 }

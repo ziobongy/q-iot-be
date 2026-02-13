@@ -2,6 +2,7 @@ package service
 
 import (
 	"qiot-configuration-service/config"
+	"regexp"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -27,6 +28,7 @@ func NewDashboardService(appConfig *config.AppConfiguration) *DashboardService {
 	}
 }
 func (ds *DashboardService) GetDashboardData(experimentId string, characteristicId string) ([]bson.M, error) {
+	nonAlpha := regexp.MustCompile(`[^a-z0-9]`)
 	//devo fare una query a influx per deviceAddress = deviceAddress e _measurement = measurement
 	experiment, err := ds.ExperimentService.GetCompleteExperimentById(experimentId)
 	if err != nil {
@@ -37,25 +39,96 @@ func (ds *DashboardService) GetDashboardData(experimentId string, characteristic
 	for _, device := range devices {
 		deviceMap := device.(primitive.M)
 		name := strings.ToLower(deviceMap["name"].(string))
+		deviceShort := strings.ToLower(getString(deviceMap, "shortName"))
 		for _, service := range deviceMap["services"].([]primitive.M) {
 			if service["uuid"].(string) != characteristicId {
 				continue
 			}
-			for _, characteristic := range service["characteristics"].(primitive.A) {
-				characteristicMap := characteristic.(primitive.M)
-				characteristicName := characteristicMap["name"].(string)
-				finalName := name + "_" + strings.ToLower(strings.Replace(characteristicName, " ", "", -1))
+			for _, characteristic := range service["characteristics"].([]primitive.M) {
+				characteristicMap := characteristic
+				characteristicName := strings.ToLower(strings.Replace(characteristicMap["name"].(string), " ", "", -1))
+				clean := nonAlpha.ReplaceAllString(characteristicName, "")
+				if deviceShort == "" || clean == "" {
+					continue
+				}
+				measureName := deviceShort + "_" + clean
+				finalName := name + "_" + characteristicName
 				structParser := characteristicMap["structParser"].(primitive.M)
 				for _, field := range structParser["fields"].(primitive.A) {
 					fieldMap := field.(primitive.M)
 					element := ElementToQuery{
 						Bucket:        "iotproject_bucket",
 						SensorName:    finalName,
-						Measurement:   finalName,
+						Measurement:   measureName,
 						DeviceAddress: deviceMap["address"].(string),
 						Field:         fieldMap["name"].(string),
 					}
 					elementToQuery = append(elementToQuery, element)
+				}
+			}
+		}
+
+		if wbs, ok := deviceMap["movesense_whiteboard"]; ok {
+			if measures, ok := wbs.(primitive.M)["measures"]; ok {
+				for _, measure := range measures.([]primitive.M) {
+					mname := strings.ToLower(getString(measure, "name"))
+					clean := nonAlpha.ReplaceAllString(mname, "")
+					if deviceShort == "" || clean == "" {
+						continue
+					}
+					measureName := deviceShort + "_" + clean
+					if jp, ok := measure["jsonPayloadParser"].(bson.M); ok {
+						fields := []bson.M{}
+						if farr, ok := jp["fields"].(bson.A); ok {
+							for _, fi := range farr {
+								if fm, ok := fi.(bson.M); ok {
+									fields = append(fields, fm)
+								}
+							}
+						}
+						element := ElementToQuery{
+							Bucket:        "iotproject_bucket",
+							SensorName:    mname,
+							Measurement:   strings.ToLower(strings.Replace(measureName, " ", "", -1)),
+							DeviceAddress: deviceMap["address"].(string),
+							Field:         "",
+						}
+						elementToQuery = append(elementToQuery, element)
+					} else if ja, ok := measure["jsonArrayParser"].(bson.M); ok {
+						fields := []bson.M{}
+						if farr, ok := ja["fields"].(bson.A); ok {
+							for _, fi := range farr {
+								if fm, ok := fi.(bson.M); ok {
+									fields = append(fields, fm)
+								}
+							}
+						}
+						for _, f := range fields {
+							fname := getString(f, "name")
+							element := ElementToQuery{
+								Bucket:        "iotproject_bucket",
+								SensorName:    mname,
+								Measurement:   strings.ToLower(strings.Replace(measureName, " ", "", -1)),
+								DeviceAddress: deviceMap["address"].(string),
+								Field:         fname,
+							}
+							elementToQuery = append(elementToQuery, element)
+						}
+					} else if smp, ok := measure["SingleMeasurementParser"].(bson.A); ok {
+						for _, fi := range smp {
+							if fm, ok := fi.(bson.M); ok {
+								fname := getString(fm, "name")
+								element := ElementToQuery{
+									Bucket:        "iotproject_bucket",
+									SensorName:    mname,
+									Measurement:   strings.ToLower(strings.Replace(measureName, " ", "", -1)),
+									DeviceAddress: deviceMap["address"].(string),
+									Field:         fname,
+								}
+								elementToQuery = append(elementToQuery, element)
+							}
+						}
+					}
 				}
 			}
 		}
