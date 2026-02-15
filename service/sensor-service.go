@@ -71,3 +71,33 @@ func (ss *SensorService) EditSensorConfiguration(sensorId string, data bson.M) (
 	}
 	return modifiedCount, nil
 }
+
+func (ss *SensorService) GetCharacteristic(sensorId string, serviceUuid string) ([]bson.M, error) {
+	oid, err2 := primitive.ObjectIDFromHex(sensorId)
+	if err2 != nil {
+		log.Println("ID non valido:", err2)
+		return nil, err2
+	}
+	sensorList, err := ss.AppConfig.Mongo.ExecuteSelectionQuery(bson.M{"_id": oid})
+	if err != nil || len(sensorList) == 0 {
+		return nil, err
+	}
+	sensor := sensorList[0]
+	result := []bson.M{}
+	for _, service := range sensor["services"].(bson.A) {
+		serviceMap := service.(bson.M)
+		if serviceMap["uuid"] == serviceUuid {
+			for _, characteristic := range serviceMap["characteristics"].(bson.A) {
+				characteristicMap := characteristic.(bson.M)
+				result = append(
+					result,
+					bson.M{
+						"id":   characteristicMap["uuid"],
+						"name": characteristicMap["name"],
+					},
+				)
+			}
+		}
+	}
+	return result, nil
+}

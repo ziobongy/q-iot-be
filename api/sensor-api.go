@@ -33,6 +33,9 @@ func NewSensorAPI(appConfig *config.AppConfiguration, ginEngine *gin.Engine) {
 		}
 		editSensorConfiguration(c, ss, c.Param("sensorId"), body)
 	})
+	ginEngine.GET("/sensor/:sensorId/characteristic/:serviceUuid", func(c *gin.Context) {
+		getCharacteristic(c, ss, c.Param("sensorId"), c.Param("serviceUuid"))
+	})
 }
 
 func getSensors(c *gin.Context, ss *service.SensorService) {
@@ -71,4 +74,12 @@ func editSensorConfiguration(c *gin.Context, ss *service.SensorService, sensorId
 		return
 	}
 	c.IndentedJSON(http.StatusOK, gin.H{"result": "Sensor updated successfully"})
+}
+func getCharacteristic(c *gin.Context, ss *service.SensorService, sensorId string, serviceUuid string) {
+	characteristics, err := ss.GetCharacteristic(sensorId, serviceUuid)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error fetching characteristics from database"})
+		return
+	}
+	c.IndentedJSON(http.StatusOK, characteristics)
 }
